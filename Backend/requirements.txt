@@ -1,0 +1,4 @@
+pygltflib==1.2.0
+xgboost==2.0.3
+supabase==2.0.2
+requests==2.31.0

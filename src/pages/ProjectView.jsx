@@ -18,61 +18,80 @@ export default function ProjectView() {
   const location = useLocation();
 
   // Load model from navigation state
-  useEffect(() => {
-    if (location.state?.glbUrl) {
-      setModelUrl(location.state.glbUrl);
-    }
-  }, [location.state]);
+  // ProjectView.jsx - useEffect
+useEffect(() => {
+  console.log("📦 Model state:", location.state); // Debug
+  if (location.state?.glbUrl) {
+    setModelUrl(location.state.glbUrl);  // Supabase URL
+  }
+}, [location.state]);
 
-  // Handle model edits → Backend risk calculation
+  // ✅ UPDATED: Full edit workflow with GLB + XGBoost + Supabase
   const handleEditChange = async (componentId, changes) => {
     try {
-      const response = await fetch("http://localhost:8000/record_decision/", {
+      console.log("🔄 Processing edit:", changes);
+      
+      const response = await fetch("http://localhost:8000/edit_component/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           component_id: componentId,
-          decision_type: "Modify",
-          mitigation_flag: changes.mitigation || false
+          model_url: modelUrl,  // Current loaded GLB
+          edit_type: changes.type || "Structural Edit",
+          edit_params: {
+            span_length: changes.span_length || 12.5,
+            cost_impact: changes.cost_impact || 75000,
+            delay_days: changes.delay_days || 7,
+            mitigation: changes.mitigation || false
+          }
         })
       });
       
       if (!response.ok) throw new Error("Risk calculation failed");
-      
       const result = await response.json();
       
-      // Add to dashboard
+      console.log("✅ Edit result:", result);
+      
+      // Update risk dashboard
       setRiskData(prev => [...prev, {
-        id: `comp_${componentId}`,
-        name: `Component ${componentId}`,
-        riskScore: Math.min(result.final_score * 20, 100) // Scale 0-100 for chart
+        id: `edit_${result.decision_id}`,
+        name: `${changes.type || 'Component'} Edit #${result.decision_id}`,
+        riskScore: Math.min(result.risk_score * 10, 100)  // Scale for chart
       }]);
 
-      // Risk threshold check (1.0 = threshold)
-      if (result.final_score > 1.0) {
+      // Handle risk threshold
+      if (result.threshold_action === "blockchain") {
         setPendingRisk(result);
-        setShowRiskModal(true); // ✅ Custom modal instead of confirm()
+        setShowRiskModal(true);
       } else {
-        console.log("✅ Low risk - stored in Merkle tree (Supabase)");
+        // Low risk: Auto-reload updated GLB from Supabase
+        if (result.storage_url && result.storage_url !== modelUrl) {
+          setModelUrl(result.storage_url);
+          console.log("✅ Low risk - Reloaded edited GLB:", result.storage_url);
+        }
+        console.log("✅ Low risk - Stored in Merkle tree (Supabase)");
       }
+      
     } catch (error) {
-      console.error("❌ Risk calculation failed:", error);
-      alert("Failed to calculate risk. Please try again.");
+      console.error("❌ Edit failed:", error);
+      alert("Failed to process edit. Check backend logs.");
     }
   };
 
-  // Blockchain logging
+  // Blockchain approval (placeholder)
   const logToBlockchain = async (riskResult) => {
     setIsApproving(true);
     try {
-      // TODO: Integrate MetaMask here
-      console.log("⛓️ Logging to blockchain:", riskResult.blockchain_hash_stub);
-      alert(`✅ Logged to blockchain: ${riskResult.blockchain_hash_stub}`);
+      // TODO: MetaMask/Ethers integration later
+      console.log("⛓️ High risk logged to blockchain:", riskResult);
+      setTimeout(() => {
+        setIsApproving(false);
+        setShowRiskModal(false);
+        alert(`✅ Approved & Logged: ${riskResult.blockchain_hash_stub || riskResult.decision_id}`);
+      }, 2000);
     } catch (error) {
       console.error("Blockchain logging failed:", error);
-    } finally {
       setIsApproving(false);
-      setShowRiskModal(false);
     }
   };
 
@@ -87,7 +106,7 @@ export default function ProjectView() {
     <div style={{ backgroundColor: theme.bg, color: theme.text, minHeight: "100vh" }}>
       <Header />
       
-      {/* ✅ RISK MODAL - Replaces confirm() */}
+      {/* ✅ RISK APPROVAL MODAL */}
       {showRiskModal && pendingRisk && (
         <>
           {/* Backdrop */}
@@ -112,11 +131,17 @@ export default function ProjectView() {
               ⚠️ High Risk Detected!
             </h3>
             <div style={{ marginBottom: "20px", lineHeight: "1.6" }}>
-              <p><strong>Score:</strong> {pendingRisk.final_score.toFixed(2)}/2.0</p>
-              <p><strong>Category:</strong> {pendingRisk.risk_category}</p>
+              <p><strong>Score:</strong> {pendingRisk.risk_score?.toFixed(2)}/10.0</p>
+              <p><strong>Category:</strong> {pendingRisk.category}</p>
+              <p><strong>Action:</strong> {pendingRisk.threshold_action}</p>
               <p style={{ color: "#ef4444", fontWeight: "500" }}>
                 {pendingRisk.warning || "Governance escalation required"}
               </p>
+              {pendingRisk.storage_url && (
+                <p style={{ fontSize: "0.85rem", color: "#94A3B8" }}>
+                  Edited GLB: {pendingRisk.storage_url.slice(-40)}
+                </p>
+              )}
             </div>
             
             <div style={{ display: "flex", gap: "12px", marginTop: "20px" }}>
@@ -139,7 +164,7 @@ export default function ProjectView() {
                   cursor: "pointer"
                 }}
               >
-                ❌ Cancel Changes
+                ❌ Cancel Edit
               </button>
             </div>
           </div>
@@ -147,7 +172,7 @@ export default function ProjectView() {
       )}
 
       <div style={{ display: "flex", height: "calc(100vh - 60px)" }}>
-        {/* Sidebar with editMode props */}
+        {/* Sidebar */}
         <Sidebar 
           darkMode={darkMode} 
           setDarkMode={setDarkMode}
@@ -189,8 +214,9 @@ export default function ProjectView() {
                 {editMode ? "✅ Save Changes" : "✏️ Enable Edit Mode"}
               </button>
               <span style={{ fontSize: "14px", opacity: 0.8 }}>
-                {modelUrl ? "Model loaded successfully" : "No model selected"}
+                {modelUrl ? `Model: ${modelUrl.split('/').pop() || 'Loaded'}` : "No model selected"}
               </span>
+              {editMode && <span style={{ color: "#10b981", fontSize: "12px" }}>✨ Edit Ready</span>}
             </div>
             
             <div style={{ width: "100%", height: "calc(100% - 60px)" }}>
@@ -200,14 +226,14 @@ export default function ProjectView() {
                   riskData={riskData}
                   onSelect={setSelectedElement}
                   editMode={editMode}
-                  onEdit={handleEditChange}
+                  onEdit={handleEditChange}  // ✅ Pass edit handler
                 />
               ) : (
                 <div style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
                   height: "100%", color: "#94A3B8", fontSize: "1.2rem"
                 }}>
-                  Select a model from the Home page
+                  Select a public GLB model from Home page
                 </div>
               )}
             </div>
@@ -222,10 +248,17 @@ export default function ProjectView() {
               borderRadius: "12px", 
               border: `1px solid ${theme.border}` 
             }}>
-              <h3 style={{ marginBottom: "15px", color: "#D4AF37" }}>AI Risk Analysis</h3>
+              <h3 style={{ marginBottom: "15px", color: "#D4AF37" }}>
+                AI Risk Analysis (XGBoost)
+              </h3>
               <RiskDashboard data={riskData.length ? riskData : [
-                { name: "No data", riskScore: 0 }
+                { name: "No edits yet", riskScore: 0 }
               ]} />
+              {riskData.length > 0 && (
+                <p style={{ color: "#94A3B8", fontSize: "0.8rem", marginTop: "10px" }}>
+                  {riskData.length} edits analyzed • High-risk = Blockchain • Low-risk = Merkle Tree
+                </p>
+              )}
             </div>
 
             {/* Selected Element Details */}
@@ -237,33 +270,90 @@ export default function ProjectView() {
                 border: "2px solid #D4AF37" 
               }}>
                 <h4 style={{ color: "#D4AF37", marginBottom: "12px" }}>🎯 Selected Element</h4>
-                <p style={{ margin: "8px 0", fontSize: "0.95rem" }}>
-                  <strong>Name:</strong> {selectedElement.name}
+                <div style={{ marginBottom: "15px" }}>
+                  <p style={{ margin: "8px 0", fontSize: "0.95rem" }}>
+                    <strong>Name:</strong> {selectedElement.name}
+                  </p>
+                  <p style={{ 
+                    margin: "8px 0", 
+                    color: selectedElement.riskScore > 50 ? "#ef4444" : "#10b981",
+                    fontWeight: "600"
+                  }}>
+                    Risk: {Math.round(selectedElement.riskScore)}%
+                  </p>
+                </div>
+                
+                {/* ✅ Edit Controls - Connected to full workflow */}
+                {editMode ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <button 
+                      onClick={() => handleEditChange(1, { 
+                        type: "Load Bearing Wall", 
+                        span_length: 15, 
+                        cost_impact: 85000, 
+                        delay_days: 10,
+                        mitigation: true 
+                      })}
+                      style={{ 
+                        padding: "10px", backgroundColor: "#10b981", 
+                        color: "white", border: "none", 
+                        borderRadius: "6px", cursor: "pointer",
+                        fontSize: "14px"
+                      }}
+                    >
+                      ✅ Apply Mitigation (Green)
+                    </button>
+                    <button 
+                      onClick={() => handleEditChange(1, { 
+                        type: "Steel Beam", 
+                        span_length: 20, 
+                        cost_impact: 120000, 
+                        delay_days: 14,
+                        mitigation: false 
+                      })}
+                      style={{ 
+                        padding: "10px", backgroundColor: "#ef4444", 
+                        color: "white", border: "none", 
+                        borderRadius: "6px", cursor: "pointer",
+                        fontSize: "14px"
+                      }}
+                    >
+                      ⚠️ High Risk Edit (Red)
+                    </button>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => setEditMode(true)}
+                    style={{ 
+                      width: "100%", 
+                      padding: "12px", 
+                      backgroundColor: "#D4AF37",
+                      color: "#000",
+                      border: "none", 
+                      borderRadius: "6px",
+                      fontWeight: "bold",
+                      cursor: "pointer"
+                    }}
+                  >
+                    ✏️ Enable Edit Mode
+                  </button>
+                )}
+              </div>
+            )}
+            
+            {!selectedElement && (
+              <div style={{ 
+                backgroundColor: theme.panel, 
+                padding: "20px", 
+                borderRadius: "12px", 
+                border: `1px solid ${theme.border}`,
+                textAlign: "center",
+                color: "#94A3B8"
+              }}>
+                <p>👆 Click an element in the 3D viewer</p>
+                <p style={{ fontSize: "0.85rem", marginTop: "5px" }}>
+                  Edit → XGBoost → Supabase Storage → Blockchain/Merkle
                 </p>
-                <p style={{ 
-                  margin: "8px 0", 
-                  color: selectedElement.riskScore > 50 ? "#ef4444" : "#10b981",
-                  fontWeight: "600"
-                }}>
-                  Risk Score: {Math.round(selectedElement.riskScore)}%
-                </p>
-                <button 
-                  onClick={() => handleEditChange(1, { mitigation: true })}
-                  disabled={isApproving}
-                  style={{ 
-                    width: "100%", 
-                    padding: "12px", 
-                    backgroundColor: editMode ? "#D4AF37" : "#6b7280",
-                    color: editMode ? "#000" : "white",
-                    border: "none", 
-                    borderRadius: "6px",
-                    fontWeight: "bold",
-                    cursor: "pointer",
-                    marginTop: "12px"
-                  }}
-                >
-                  {editMode ? "🔄 Recalculate Risk" : "✏️ Edit This Element"}
-                </button>
               </div>
             )}
           </aside>

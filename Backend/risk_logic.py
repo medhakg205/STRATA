@@ -1,32 +1,43 @@
 from datetime import datetime
-
-
-# ---------------------------------------------------------
-# CORE ENTERPRISE RISK ENGINE
-# ---------------------------------------------------------
+import math  # For isnan check
 
 def generate_risk_event(
-    regulatory_level: float,
-    importance_factor: float,
-    load_bearing: bool,
-    dependency_count: int,
-    redundancy_level: float,
-    mitigation_flag: bool
+    regulatory_level: float = 0.0,
+    importance_factor: float = 0.0,
+    load_bearing: bool = False,
+    dependency_count: int = 0,
+    redundancy_level: float = 0.0,
+    mitigation_flag: bool = False
 ):
-    """
-    Enterprise risk calculation engine.
+    
+    # 🔧 Input validation - prevents NaN
+    def safe_float(val, default=0.0):
+        if val is None or math.isnan(val):
+            return default
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return default
+    
+    def safe_int(val, default=0):
+        if val is None:
+            return default
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return default
+        
+    def safe_bool(val, default=False):
+        if val is None:
+            return default
+        return bool(val)
 
-    Parameters:
-    - regulatory_level (float)      -> Project-level risk multiplier
-    - importance_factor (float)     -> Zone criticality factor
-    - load_bearing (bool)           -> Structural importance
-    - dependency_count (int)        -> System coupling
-    - redundancy_level (float)      -> Resilience factor
-    - mitigation_flag (bool)        -> Active mitigation present
-
-    Returns:
-    - dict with base_risk, adjusted_risk, final_score, severity
-    """
+    regulatory_level = safe_float(regulatory_level)
+    importance_factor = safe_float(importance_factor)
+    load_bearing = safe_bool(load_bearing)
+    dependency_count = safe_int(dependency_count)
+    redundancy_level = safe_float(redundancy_level, 0.0)
+    mitigation_flag = safe_bool(mitigation_flag)
 
     # ---------------------------------------------------------
     # 1️⃣ Base Risk

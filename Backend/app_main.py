@@ -37,11 +37,20 @@ def get_db():
         db.close()
 
 # --- MODEL FETCHING ---
-
 @app.get("/public_glb_models/")
 def get_public_models(db: Session = Depends(get_db)):
-    models = db.query(Model).all()
-    return [{"id": m.id, "name": m.name, "category": m.category, "glb_url": m.glb_url, "risk_score": m.current_risk} for m in models]
+    models = db.query(Model).filter(Model.glb_url != None).all()
+    result = []
+    for m in models:
+        if m.glb_url.strip():  # skip empty strings
+            result.append({
+                "id": m.id,
+                "name": m.name,
+                "category": m.category,
+                "glb_url": m.glb_url,
+                "risk_score": getattr(m, "current_risk", 0.0)
+            })
+    return result
 
 @app.get("/latest_model/{model_id}")
 def get_latest_model(model_id: int, db: Session = Depends(get_db)):

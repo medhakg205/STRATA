@@ -1,119 +1,96 @@
-def compute_risk(building_type,
-                 component_type,
-                 span_length,
-                 cost_impact,
-                 delay_days,
-                 dependency_count,
-                 redundancy_level,
-                 inspection_level,
-                 mitigation_action):
+from datetime import datetime
 
-    # ---------------------------
-    # 1️⃣ Base Risk (normalized 0–1)
-    # ---------------------------
-    base_risk = min(
-        (span_length * 0.01) +
-        (cost_impact / 100000) +
-        (delay_days * 0.02),
-        1.0
-    )
 
-    # ---------------------------
-    # 2️⃣ Importance Factor
-    # ---------------------------
-    importance_factors = {
-        "Storage": 0.8,
-        "Residential": 1.0,
-        "Commercial": 1.1,
-        "School": 1.25,
-        "Healthcare": 1.5,
-        "Megacomplex": 1.3
-    }
+# ---------------------------------------------------------
+# CORE ENTERPRISE RISK ENGINE
+# ---------------------------------------------------------
 
-    importance = importance_factors.get(building_type, 1.0)
+def generate_risk_event(
+    regulatory_level: float,
+    importance_factor: float,
+    load_bearing: bool,
+    dependency_count: int,
+    redundancy_level: float,
+    mitigation_flag: bool
+):
+    """
+    Enterprise risk calculation engine.
 
-    # ---------------------------
-    # 3️⃣ Dependency Multiplier
-    # ---------------------------
-    dependency_multiplier = min(1 + (0.05 * dependency_count), 1.4)
+    Parameters:
+    - regulatory_level (float)      -> Project-level risk multiplier
+    - importance_factor (float)     -> Zone criticality factor
+    - load_bearing (bool)           -> Structural importance
+    - dependency_count (int)        -> System coupling
+    - redundancy_level (float)      -> Resilience factor
+    - mitigation_flag (bool)        -> Active mitigation present
 
-    # ---------------------------
-    # 4️⃣ Redundancy Multiplier
-    # ---------------------------
-    redundancy_map = {
-        "High": 0.85,
-        "Medium": 1.0,
-        "Low": 1.2
-    }
+    Returns:
+    - dict with base_risk, adjusted_risk, final_score, severity
+    """
 
-    redundancy_multiplier = redundancy_map.get(redundancy_level, 1.0)
+    # ---------------------------------------------------------
+    # 1️⃣ Base Risk
+    # ---------------------------------------------------------
 
-    # ---------------------------
-    # 5️⃣ Inspection Multiplier
-    # ---------------------------
-    inspection_map = {
-        "Normal": 1.0,
-        "Enhanced": 1.15,
-        "Regulatory Critical": 1.3
-    }
+    base_risk = 1.0
 
-    inspection_multiplier = inspection_map.get(inspection_level, 1.0)
+    # Regulatory scaling
+    base_risk *= (1 + regulatory_level * 0.1)
 
-    # ---------------------------
-    # 6️⃣ Mitigation Multiplier
-    # ---------------------------
-    mitigation_map = {
-        "None": 1.0,
-        "Added Inspection": 0.9,
-        "Reinforcement Added": 0.8,
-        "Material Upgrade": 0.75,
-        "Structural Strengthening": 0.7
-    }
+    # Load-bearing multiplier
+    if load_bearing:
+        base_risk *= 1.3
 
-    mitigation_multiplier = mitigation_map.get(mitigation_action, 1.0)
+    # Dependency impact
+    base_risk *= (1 + dependency_count * 0.05)
 
-    # ---------------------------
-    # Final Risk
-    # ---------------------------
-    final_risk = (
-        base_risk *
-        importance *
-        dependency_multiplier *
-        redundancy_multiplier *
-        inspection_multiplier *
-        mitigation_multiplier
-    )
+    base_risk = round(base_risk, 4)
 
-    # ---------------------------
-    # Risk Classification
-    # ---------------------------
-    if final_risk < 0.5:
-        category = "Low"
-    elif final_risk < 1.0:
-        category = "Medium"
-    elif final_risk < 1.5:
-        category = "High"
+    # ---------------------------------------------------------
+    # 2️⃣ Zone Adjustment
+    # ---------------------------------------------------------
+
+    adjusted_risk = base_risk * (1 + importance_factor * 0.1)
+    adjusted_risk = round(adjusted_risk, 4)
+
+    # ---------------------------------------------------------
+    # 3️⃣ Redundancy Modifier
+    # ---------------------------------------------------------
+
+    # Higher redundancy lowers risk
+    redundancy_modifier = max(0.5, 1 - (redundancy_level * 0.1))
+    final_score = adjusted_risk * redundancy_modifier
+
+    # ---------------------------------------------------------
+    # 4️⃣ Mitigation Adjustment
+    # ---------------------------------------------------------
+
+    if mitigation_flag:
+        final_score *= 0.85
+
+    final_score = round(final_score, 4)
+
+    # ---------------------------------------------------------
+    # 5️⃣ Severity Classification
+    # ---------------------------------------------------------
+
+    if final_score < 1.2:
+        severity = "Low"
+    elif final_score < 1.8:
+        severity = "Moderate"
+    elif final_score < 2.5:
+        severity = "High"
     else:
-        category = "Critical"
+        severity = "Critical"
 
-    # ---------------------------
-    # Confidence Score (NEW)
-    # Higher dependencies + higher inspection = higher confidence
-    # ---------------------------
-    confidence = min(
-        0.6 +
-        (dependency_count * 0.02) +
-        (0.1 if inspection_level != "Normal" else 0),
-        0.95
-    )
+    # ---------------------------------------------------------
+    # Return Structured Risk Object
+    # ---------------------------------------------------------
 
-    explanation = (
-        f"BaseRisk={round(base_risk,2)} | "
-        f"I={importance} | "
-        f"D={dependency_multiplier} | "
-        f"R={redundancy_multiplier} | "
-        f"Inspect={inspection_multiplier} | "
-        f"Mitigation={mitigation_multiplier}"
-    )
-
-    return round(final_risk, 2), category, explanation, round(confidence, 2)
+    return {
+        "base_risk": base_risk,
+        "adjusted_risk": adjusted_risk,
+        "final_score": final_score,
+        "severity": severity,
+        "generated_at": datetime.utcnow()
+    }

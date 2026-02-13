@@ -3,6 +3,14 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from db_engine import Base
 
+<<<<<<< HEAD
+=======
+
+# ---------------------------------------------------
+# PROJECTS TABLE
+# ---------------------------------------------------
+
+>>>>>>> 3f2be13dba49822f38f1457fd15a87f3f2424cca
 class Project(Base):
     __tablename__ = "projects"
     id = Column(Integer, primary_key=True, index=True)

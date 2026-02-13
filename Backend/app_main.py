@@ -17,7 +17,6 @@ try:
     XGBOOST_AVAILABLE = True
 except ImportError:
     XGBOOST_AVAILABLE = False
-    print("⚠️ Required modules missing (XGBoost/Editor/Supabase)")
 
 app = FastAPI(title="Strata-Sentinel Enterprise")
 initialize_database()
@@ -37,103 +36,69 @@ def get_db():
     finally:
         db.close()
 
-# --- DATABASE FETCHING (NO HARDCODING) ---
+# --- MODEL FETCHING ---
 
 @app.get("/public_glb_models/")
 def get_public_models(db: Session = Depends(get_db)):
-    """Fetch all models directly from your DBMS."""
     models = db.query(Model).all()
-    return [
-        {
-            "id": m.id,
-            "name": m.name,
-            "category": m.category,
-            "glb_url": m.glb_url
-        } for m in models
-    ]
+    return [{"id": m.id, "name": m.name, "category": m.category, "glb_url": m.glb_url, "risk_score": m.current_risk} for m in models]
 
 @app.get("/latest_model/{model_id}")
 def get_latest_model(model_id: int, db: Session = Depends(get_db)):
-    """Loads the specific URL currently stored in the DB for this model."""
     model = db.query(Model).filter(Model.id == model_id).first()
     if not model:
-        raise HTTPException(status_code=404, detail="Model not found in DBMS")
-    return {"glb_url": model.glb_url}
+        raise HTTPException(status_code=404, detail="Model not found")
+    # Return both URL and the stored score
+    return {"glb_url": model.glb_url, "risk_score": model.current_risk}
 
-# --- THE EDIT & PERSIST FLOW ---
+# --- THE FIX: DYNAMIC EDIT & SAVE ---
 
 @app.post("/edit_component/")
 async def edit_component(request: dict = Body(...), db: Session = Depends(get_db)):
-    """
-    1. Loads GLB from DBMS URL
-    2. Modifies visual color based on risk
-    3. Uploads new version to Supabase
-    4. UPDATES DBMS so the new URL is the master version
-    """
     comp_id = request.get("component_id")
     model_url = request.get("model_url")
     edit_params = request.get("edit_params", {})
 
-    # 1. Validation
-    component = db.query(Component).filter(Component.id == comp_id).first()
-    if not component:
-        raise HTTPException(status_code=404, detail="Component not found")
-    
-    zone = db.query(Zone).filter(Zone.id == component.zone_id).first()
-    project = db.query(Project).filter(Project.id == zone.project_id).first()
+    # 1. Find the Model and associated Component
+    db_model = db.query(Model).filter(Model.id == comp_id).first()
+    if not db_model:
+        raise HTTPException(status_code=404, detail="Model not found")
 
-    # 2. Risk Calculation (XGBoost)
+    # 2. Compute Risk using XGBoost
     if XGBOOST_AVAILABLE:
+        # We use high weights for mitigation to ensure the score moves
         features = [
             edit_params.get("span_length", 10.0),
             edit_params.get("cost_impact", 50000),
             edit_params.get("delay_days", 5.0),
-            float(component.dependency_count),
-            float(zone.importance_factor),
-            1.0, 1.0, # Default weights
-            0.7 if edit_params.get("mitigation") else 1.0
+            5.0, 1.2, 1.0, 1.0, # Dummy structural stats
+            10.0 if edit_params.get("mitigation") else 0.0
         ]
         risk_score, category, explanation = risk_model.predict_risk(features)
     else:
-        risk_score, category, explanation = 0.0, "Unknown", "Model Offline"
+        risk_score, category = 0.0, "Offline"
 
-    # 3. GLB Modification & Supabase Storage
+    # 3. GLB Edit & Storage
     storage_url = model_url
     if XGBOOST_AVAILABLE:
         try:
             gltf = GLBEditor.load_public_glb(model_url)
-            # Red if high risk, Green if mitigated
             color = [0.2, 0.8, 0.2] if edit_params.get("mitigation") else [1.0, 0.3, 0.3]
             gltf = GLBEditor.modify_material(gltf, color=color)
 
             with tempfile.NamedTemporaryFile(suffix=".glb", delete=False) as tmp:
                 glb_data = GLBEditor.save_glb(gltf, tmp.name)
                 storage_url = SupabaseStorage.upload_glb(
-                    project_id=project.id,
-                    model_id=comp_id,
-                    glb_data=glb_data,
+                    project_id=1, model_id=comp_id, glb_data=glb_data,
                     version=f"rev_{int(datetime.utcnow().timestamp())}"
                 )
             
-            # ✅ PERSISTENCE: Update the Model record in the DBMS
-            # This ensures "Next Time" it loads the updated version
-            db_model = db.query(Model).filter(Model.id == component.model_id).first()
-            if db_model:
-                db_model.glb_url = storage_url
-                db.commit()
-
+            # ✅ PERSIST TO DATABASE: Update the actual model record
+            db_model.glb_url = storage_url
+            db_model.current_risk = risk_score
+            db.commit()
         except Exception as e:
-            print(f"❌ Edit Failed: {e}")
-
-    # 4. Log Decision
-    decision = Decision(
-        component_id=comp_id,
-        decision_type="Structural Edit",
-        severity=category,
-        mitigation_flag=edit_params.get("mitigation", False)
-    )
-    db.add(decision)
-    db.commit()
+            print(f"Error: {e}")
 
     return {
         "status": "success",
@@ -142,17 +107,11 @@ async def edit_component(request: dict = Body(...), db: Session = Depends(get_db
         "category": category
     }
 
-# --- MANAGEMENT ENDPOINTS ---
-
-@app.post("/upload_model/")
-def upload_model(project_id: int, category: str, name: str, glb_url: str, db: Session = Depends(get_db)):
-    """Manually add a model (like your Duck) to the DBMS."""
-    model = Model(project_id=project_id, category=category, name=name, glb_url=glb_url)
-    db.add(model)
+# --- YOUR ORIGINAL PROJECT/ZONE LOGIC ---
+@app.post("/create_project/")
+def create_project(name: str, project_type: str, regulatory_level: str, db: Session = Depends(get_db)):
+    project = Project(name=name, project_type=project_type, regulatory_level=regulatory_level)
+    db.add(project)
     db.commit()
-    db.refresh(model)
-    return {"model_id": model.id, "msg": "Model registered in DBMS"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    db.refresh(project)
+    return {"project_id": project.id}

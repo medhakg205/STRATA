@@ -7,6 +7,20 @@ from db_engine import Base
 # ---------------------------------------------------
 # PROJECTS TABLE
 # ---------------------------------------------------
+# Add to db_models.py
+class Model(Base):
+    __tablename__ = "models"
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"))
+    category = Column(String, nullable=False)  # e.g., "Healthcare", "Residential"
+    name = Column(String, nullable=False)
+    glb_url = Column(String, nullable=False)  # Public Supabase Storage URL
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    project = relationship("Project", back_populates="models")
+
+# Add to Project class
+projects.models = relationship("Model", back_populates="project", cascade="all, delete")
 
 class Project(Base):
     __tablename__ = "projects"

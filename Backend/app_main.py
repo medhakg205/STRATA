@@ -61,6 +61,26 @@ def create_project(name: str, project_type: str, regulatory_level: str, db: Sess
 # ---------------------------------------------------
 # CREATE ZONE
 # ---------------------------------------------------
+# Get categories
+@app.get("/categories/")
+def get_categories(db: Session = Depends(get_db)):
+    categories = db.query(func.distinct(Model.category)).all()
+    return [{"name": cat[0]} for cat in categories]
+
+# Get models by category
+@app.get("/models/{category}")
+def get_models_by_category(category: str, db: Session = Depends(get_db)):
+    models = db.query(Model).filter(Model.category == category).all()
+    return [{"id": m.id, "name": m.name, "glb_url": m.glb_url} for m in models]
+
+# Upload model (you'll call this when users upload GLB files)
+@app.post("/upload_model/")
+def upload_model(project_id: int, category: str, name: str, glb_url: str, db: Session = Depends(get_db)):
+    model = Model(project_id=project_id, category=category, name=name, glb_url=glb_url)
+    db.add(model)
+    db.commit()
+    db.refresh(model)
+    return {"model_id": model.id}
 
 @app.post("/create_zone/")
 def create_zone(project_id: int, zone_name: str,

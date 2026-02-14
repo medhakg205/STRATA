@@ -23,8 +23,7 @@ export default function Sidebar({ darkMode, setDarkMode, editMode, setEditMode }
       </button>
       
       <hr style={{ borderColor: "#2D3748", margin: "20px 0" }} />
-      <button style={{ ...btnStyle, backgroundColor: "#D4AF37", color: "#000" }}>Load BIM Model</button>
-      <button style={{ ...btnStyle, backgroundColor: "#3b82f6" }}>Risk Dashboard</button>
+      
     </aside>
   );
 }
